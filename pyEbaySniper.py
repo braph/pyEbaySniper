@@ -320,10 +320,14 @@ def call_command(command, cmdline):
 ###
 def get_driver():
     ''' Return webdriver instance as specified in config '''
+    args = {}
+    if not get_variable('DEBUG'):
+        args['service_log_path'] = os.devnull
+
     return { 'Chrome':    webdriver.Chrome,
              'Firefox':   webdriver.Firefox,
              'PhantomJS': webdriver.PhantomJS
-           }[get_variable('DRIVER')]()
+           }[get_variable('DRIVER')](**args)
 
 def get_as_etree(url):
     response = requests.get(url)
@@ -447,7 +451,7 @@ def shell_kill(args):
 def shell_reload(args):
     ''' Update article infos of thread '''
     try:
-        threads[args.id].get_infos()
+        threads[args.id].article_infos.load()
     except IndexError:
         raise Exception("No such thread.")
 
@@ -477,8 +481,8 @@ def shell_source(args):
     ),
     add_argument('--dry', dest='dry', action='count', default=0,
         help="Don't actually place the bid, but do the login though. If specified twice, also disable login"),
-    add_argument('link',  metavar='LINK',
-        help='Link to article'),
+    add_argument('url',  metavar='URL',
+        help='URL to article'),
     add_argument('bid', metavar='BID', type=argparse_type(read_price),
         help='Price to bid')
 )
@@ -491,32 +495,27 @@ def shell_bid(args):
     elif args.on:     start_time = args.on
     else:             start_time = datetime.now()
 
-    bid_thread = BidThread(len(threads), args.link, args.bid, start_time, args.dry)
+    bid_thread = BidThread(len(threads), args.url, args.bid, start_time, args.dry)
     threads.append(bid_thread)
     bid_thread.start()
 
 
 class BidThread(threading.Timer):
-    def __init__(self, thread_id, link, bid, start_time, dry=False):
+    def __init__(self, thread_id, url, bid, start_time, dry=False):
         self.thread_id = thread_id
-        self.link = link
+        self.url = url
         self.bid = bid
         self.dry = dry
 
         # initialized fields with 'empty' values
-        self.title = 'N/A'
-        self.ending_datetime = datetime.fromtimestamp(0)
         self.bid_datetime = datetime.fromtimestamp(0)
-        self.currency = 'N/A'
-        self.current_bid = -1.0
-        # get infos
-        self.get_infos()
+        self.article_infos = EbayArticleInfoPage(self.url)
 
         self.bidded = False
         self.error = None
 
         if isinstance(start_time, timedelta): # seconds relative to ending time
-            self.bid_datetime = self.ending_datetime - start_time
+            self.bid_datetime = self.article_infos.ending_datetime - start_time
         else:
             self.bid_datetime = start_time
 
@@ -528,16 +527,10 @@ class BidThread(threading.Timer):
         else:
             threading.Timer.__init__(self, 0, self.do_bid)
 
-    def get_infos(self):
-        infos = get_ebay_article_infos(self.link)
+        if (self.bid < self.article_infos.current_bid):
+            print("Warning, your bid will fail: Current price is %2.f, your bid is %2.f" % (
+                self.article_infos.current_bid, self.bid))
 
-        self.title = infos.title
-        self.ending_datetime = infos.ending
-        self.currency, self.current_bid = infos.currency, infos.bid
-
-        if (self.bid < self.current_bid):
-            raise Exception("Will not bid: Current price is %2.f, your bid is %2.f" % (
-                self.current_bid, self.bid))
 
     def start(self):
         threading.Timer.start(self)
@@ -556,7 +549,7 @@ class BidThread(threading.Timer):
                 except:
                     login_page.login(user, password) # try again if failed
 
-            article_page = EbayArticleBidPage(driver, self.link)
+            article_page = EbayArticleBidPage(driver, self.url)
 
             self.log("Entering bid ", write_price(self.bid), ('(dry)' if self.dry else ''), "...")
             if not self.dry:
@@ -595,7 +588,7 @@ class BidThread(threading.Timer):
             return "Done"
         elif self.is_alive():
             bidding_in = self.bid_datetime - datetime.now()
-            if bidding_in < 0:
+            if bidding_in.total_seconds() < 0:
                 return "Bidding now"
             else:
                 bidding_in = str(bidding_in).split('.', 2)[0]
@@ -606,11 +599,11 @@ class BidThread(threading.Timer):
     def __repr__(self):
         return "{}: {}\n  Ending Date: {}\n  Bid Date: {}\n  Current Bid: {}\n  Bid: {}\n  Status: {}".format(
             self.thread_id,
-            self.title,
-            self.ending_datetime.strftime("%d.%m.%Y %H:%M:%S"),
+            self.article_infos.title,
+            self.article_infos.ending_datetime.strftime("%d.%m.%Y %H:%M:%S"),
             self.bid_datetime.strftime("%d.%m.%Y %H:%M:%S"),
-            self.currency + ' ' + write_price(self.current_bid),
-            self.currency + ' ' + write_price(self.bid),
+            self.article_infos.currency + ' ' + write_price(self.article_infos.current_bid),
+            self.article_infos.currency + ' ' + write_price(self.bid),
             self.get_status()
         )
 
@@ -629,39 +622,50 @@ def shell_login(args):
     finally:
         driver.quit()
 
+
 ##############################################################
 # Ebay Pages
 ##############################################################
-def get_ebay_article_infos(url):
-    tree = get_as_etree(url)
+class EbayArticleInfoPage():
+    def __init__(self, url):
+        self.url = url
+        self.load()
 
-    response = namedtuple('EbayArticleInfo', ['currency', 'bid', 'title', 'ending'])
+    def load(self):
+        tree = get_as_etree(self.url)
 
-    try:
-        current_bid = tree.xpath('//span[@id="prcIsum_bidPrice"]')[0].text
-        response.currency, bid = current_bid.split()
-        response.bid = read_price(bid.replace('$', ''))
-    except: # this is worse, but we can live without the bid either
-        response.currency, response.bid = '???', -1.0
+        try:
+            current_bid = tree.xpath('//span[@id="prcIsum_bidPrice"]')[0].text
+            self.currency, bid = current_bid.split()
+            self.current_bid = read_price(bid.replace('$', ''))
+        except: # this is worse, but we can live without the bid either
+            self.currency, self.current_bid = '???', -1.0
 
-    try:
-        for tex in tree.xpath('//h1[@id="itemTitle"]')[0].itertext():
-            response.title = tex
-    except: # well, we can live without a title ;)
-        response.title = "Could not exctract article title. Consider to fix me"
+        self.title = ''
+        try:
+            for text in tree.xpath('//h1[@id="itemTitle"]')[0].itertext():
+                self.title += text
+        except: # well, we can live without a title ;)
+            self.title = "Could not exctract article title. Consider to fix me"
 
-    ending = ' '.join(
-        filter(None,
-            map(str.strip,
-                tree.xpath('//span[@class="vi-tm-left"]')[0].itertext())))
+        ending = ' '.join(
+            filter(None,
+                map(str.strip,
+                    tree.xpath('//span[@class="vi-tm-left"]')[0].itertext())))
 
-    ending = ending.lstrip('(')
-    ending = ending.rstrip(')')
-    ending = ending[0:ending.rindex(' ')]
-    response.ending = datetime.strptime(ending, '%d. %b. %Y %H:%M:%S')
-    #response.ending = dateparser.parse(ending, fuzzy=True)
+        ending = ending.lstrip('(')
+        ending = ending.rstrip(')')
+        ending = ending[0:ending.rindex(' ')]
+        self.ending_datetime = datetime.strptime(ending, '%d. %b. %Y %H:%M:%S')
+        #self.ending = dateparser.parse(ending, fuzzy=True)
 
-    return response
+    def __repr__(self):
+        return "{}:\n\tEnding Date: {}\n\tCurrent Bid: {}\n".format(
+            self.title,
+            self.ending_datetime.strftime("%d.%m.%Y %H:%M:%S"),
+            self.currency + ' ' + write_price(self.current_bid)
+        )
+
 
 class EbayArticleBidPage():
     def __init__(self, driver, url):
