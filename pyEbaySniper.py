@@ -75,7 +75,7 @@ def setup_vars():
     #    os.path.expandvars('/tmp/ebay-$USER-cookie')
     #)
 
-    reg_variable('DEBUG', 'Print stacktraces', type=bool, value=0)
+    reg_variable('DEBUG', 'Print stacktraces and write ghostdriver.log', type=bool, value=0)
     reg_variable('LOGIN_URL', 'URL for ebay login page', 'https://signin.ebay.de/ws/eBayISAPI.dll?SignIn')
     reg_variable('LOGIN_URL_RE', 'RegEx to check if URL is a login page', 'https://signin.ebay.de')
     reg_variable('LOGIN_FIELD_PASS_RE', 'RegEx to find password input field in login page', 'passwor')
@@ -390,14 +390,18 @@ def shell_help(args):
             except KeyError:
                 func_to_names[func] = [name]
 
-        print("Available commands:\n")
+        print("\nAvailable commands:\n")
         for func, names in func_to_names.items():
-            print('  ', '|'.join(names)+':', func.description)
+            print('  ', ('|'.join(names)+':').rjust(14), func.description)
+        print("\nType help <command> for further information\n")
     elif args.what in commands:
+        print()
         call_command(args.what, '--help')
+        print()
     elif args.what in variables:
-        print('Info:', get_variable_info(args.what).description)
+        print('Description:', get_variable_info(args.what).description)
         shell_set(args.what)
+        print()
     else:
         raise Exception("'{}' is neither a command nor a variable".format(what))
 
@@ -608,7 +612,7 @@ class BidThread(threading.Timer):
         )
 
     def log(self, *args):
-        print(str(self.thread_id)+':', *args)
+        print('['+str(self.thread_id)+']', *args)
 
 @reg_command('login-test')
 @argparsed_func('login-test')
