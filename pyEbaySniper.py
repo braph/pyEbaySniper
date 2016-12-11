@@ -624,6 +624,7 @@ def shell_login(args):
         driver = get_driver()
         login_page = EbayLoginPage(driver)
         login_page.login(user, password)
+        print("Success")
     finally:
         driver.quit()
 
