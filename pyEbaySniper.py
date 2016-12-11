@@ -573,13 +573,14 @@ class BidThread(threading.Timer):
                     article_page.confirm_bid()
                 self.log("Bidding done")
             finally:
-                if not self.dry:
-                    time.sleep(5) # TODO: bid on something and analyze output.
-                    with open('/tmp/ebay-dump', 'a') as dump_fh:
-                        dump_fh.write('<!-- ')
-                        dump_fh.write(driver.current_url)
-                        dump_fh.write("-->\n")
-                        dump_fh.write(driver.page_source)
+                pass
+                #if not self.dry:
+                #    time.sleep(5) # TODO: bid on something and analyze output.
+                #    with open('/tmp/ebay-dump', 'a') as dump_fh:
+                #        dump_fh.write('<!-- ')
+                #        dump_fh.write(driver.current_url)
+                #        dump_fh.write("-->\n")
+                #        dump_fh.write(driver.page_source)
 
         except Exception as e:
             self.log("Got Exception: " + str(e))
