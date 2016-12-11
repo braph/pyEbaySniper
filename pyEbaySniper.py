@@ -610,10 +610,10 @@ class BidThread(threading.Timer):
     def log(self, *args):
         print(str(self.thread_id)+':', *args)
 
-@reg_command('login')
-@argparsed_func('login')
+@reg_command('login-test')
+@argparsed_func('login-test')
 def shell_login(args):
-    ''' log in on eBay '''
+    ''' Try to to log in to eBay '''
     user, password = get_login_credentials()
     try:
         driver = get_driver()
