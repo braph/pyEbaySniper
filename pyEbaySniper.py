@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # pyEbaySniper - timed bidding on ebay articles
 # Copyright (C) 2016 Benjamin Abendroth
@@ -27,9 +27,7 @@ import atexit
 import requests
 import threading
 import traceback
-
 import argparse
-import argcomplete
 
 from io import StringIO
 from lxml import etree
@@ -38,15 +36,34 @@ from datetime import datetime, timedelta
 from itertools import count
 from collections import namedtuple
 
-from prompt_toolkit import prompt
-from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.history import FileHistory
+import_errors = []
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.support import expected_conditions as EC
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    import_errors.append('argcomplete')
+
+try:
+    from prompt_toolkit import prompt
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.history import FileHistory
+except ModuleNotFoundError:
+    import_errors.append('prompt_toolkit')
+
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.common.exceptions import NoSuchElementException
+    from selenium.webdriver.support import expected_conditions as EC
+except ModuleNotFoundError:
+    import_errors.append('selenium')
+
+if import_errors:
+    for import_error in import_errors:
+        print("Module '" + import_error + "' not found.")
+    sys.exit(1)
+
 
 program = 'pyEbaySniper'
 version = '0.1'
